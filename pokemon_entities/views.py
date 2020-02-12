@@ -3,6 +3,7 @@ import json
 
 from django.http import HttpResponseNotFound, HttpRequest
 from django.shortcuts import render
+from django.core.exceptions import ObjectDoesNotExist
 
 from pokemon_entities.models import Pokemon, PokemonEntity
 
@@ -24,8 +25,7 @@ def add_pokemon(folium_map, lat, lon, name, image_url=DEFAULT_IMAGE_URL):
 
 def show_all_pokemons(request):
     pokemons = Pokemon.objects.all()
-    #with open("pokemon_entities/pokemons.json", encoding="utf-8") as database:
-    #    pokemons = json.load(database)['pokemons']
+
     pokemon_entities = PokemonEntity.objects.all()
     folium_map = folium.Map(location=MOSCOW_CENTER, zoom_start=12)
     
@@ -54,32 +54,52 @@ def show_all_pokemons(request):
 
 
 def show_pokemon(request, pokemon_id):
-    #with open("pokemon_entities/pokemons.json", encoding="utf-8") as database:
-    #    pokemons = json.load(database)['pokemons']
-    requested_pokemon = PokemonEntity.objects.get(id=pokemon_id)
+    try:
+        requested_pokemon = Pokemon.objects.get(id=pokemon_id)
+    except ObjectDoesNotExist:
+        return HttpResponseNotFound('<h1>Такой покемон не найден</h1>')
+
+    requested_pokemon_dict = {}
+
+    requested_pokemon_dict['title_ru'] = requested_pokemon.title
+    requested_pokemon_dict['title_en'] = requested_pokemon.title_en
+    requested_pokemon_dict['title_jp'] = requested_pokemon.title_jp
+    requested_pokemon_dict['pokemon_id'] = requested_pokemon.id
+    requested_pokemon_dict['img_url'] = request.build_absolute_uri(requested_pokemon.image.url)
+    requested_pokemon_dict['description'] = requested_pokemon.description
     
-    #for pokemon in pokemon_entities:
-    #    if pokemon.id == int(pokemon_id):
-    #        requested_pokemon = pokemon
-    #        break
-    #else:
-    #    return HttpResponseNotFound('<h1>Такой покемон не найден</h1>')
+    if requested_pokemon.previous_evolution:
+        requested_pokemon_dict['previous_evolution'] = {
+            'pokemon_id':requested_pokemon.previous_evolution.id,
+            'title_ru': requested_pokemon.previous_evolution.title,
+            'img_url': request.build_absolute_uri(requested_pokemon.previous_evolution.image.url)
+        }
+    
+    next_evolution = requested_pokemon.next_evolutions.all()
+    
+    if next_evolution:
+        next_evolution = next_evolution[0]
+        requested_pokemon_dict['next_evolution'] = {
+            'pokemon_id':next_evolution.id,
+            'title_ru': next_evolution.title,
+            'img_url': request.build_absolute_uri(next_evolution.image.url)
+        }
+
+
 
     folium_map = folium.Map(location=MOSCOW_CENTER, zoom_start=12)
 
-    add_pokemon(
-            folium_map,
-            requested_pokemon.lat,
-            requested_pokemon.lon,
-            requested_pokemon.pokemon.title,
-            request.build_absolute_uri(requested_pokemon.pokemon.image.url)
-        )
+    pokemon_entities = PokemonEntity.objects.filter(id=pokemon_id)
+
+    for pokemon_entity in pokemon_entities:
+
+        add_pokemon(
+                folium_map,
+                pokemon_entity.lat,
+                pokemon_entity.lon,
+                pokemon_entity.pokemon.title,
+                request.build_absolute_uri(pokemon_entity.pokemon.image.url)
+            )
 
     return render(request, "pokemon.html", context={'map': folium_map._repr_html_(),
-                                                    'pokemon': requested_pokemon})
-
-
-'''
-что в JSON-файле.
-В словаре должны быть поля img_url, title_ru и т.д., как в JSON-файле.
-'''
+                                                    'pokemon': requested_pokemon_dict})
